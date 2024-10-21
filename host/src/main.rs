@@ -54,7 +54,8 @@ fn main() {
     // TODO: Implement code for retrieving receipt journal here.
 
     // For example:
-    let _output: u32 = receipt.journal.decode().unwrap();
+    let output: Header = receipt.journal.decode().unwrap();
+    println!("time: {}", output.time);
 
     // The receipt was verified at the end of proving, but the below code is an
     // example of how someone else could verify this receipt.
