@@ -1,15 +1,5 @@
 use bitcoin_hashes::{sha256d, Hash};
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-
-fn genesis_root() -> [u8; 32] {
-    hex::decode("3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a")
-        .unwrap()
-        .try_into()
-        .unwrap()
-}
-
-static GENESIS_MERKLE_ROOT: Lazy<[u8; 32]> = Lazy::new(genesis_root);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Header {
@@ -23,10 +13,16 @@ pub struct Header {
 
 // Example of how to create a sample block header
 pub fn create_genesis_block_header() -> Header {
+    let merkle_root =
+        hex::decode("3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a")
+            .unwrap()
+            .try_into()
+            .unwrap();
+
     Header {
         version: 0x01,
         prev_blockhash: [0u8; 32],
-        merkle_root: *GENESIS_MERKLE_ROOT,
+        merkle_root,
         time: 0x495fab29,
         bits: 0x1d00ffff,
         nonce: 0x7c2bac1d,
@@ -48,7 +44,6 @@ pub fn serialize_block_header(header: &Header) -> Vec<u8> {
 // Function to calculate the double SHA-256 hash of a block header
 pub fn calculate_hash(header: &Header) -> [u8; 32] {
     let serialized = serialize_block_header(header);
-    println!("serialized: {:?}", hex::encode(&serialized));
     *sha256d::Hash::hash(&serialized).as_byte_array()
 }
 

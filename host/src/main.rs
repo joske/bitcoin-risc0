@@ -23,8 +23,7 @@ fn main() {
     // Produce a receipt by proving the specified ELF binary.
     let receipt = prover.prove(env, VERIFY_ELF).unwrap().receipt;
 
-    let output: Header = receipt.journal.decode().unwrap();
-    println!("time: {}", output.time);
+    let _output: Header = receipt.journal.decode().unwrap();
 
     // The receipt was verified at the end of proving, but the below code is an
     // example of how someone else could verify this receipt.
