@@ -1,3 +1,5 @@
+use std::ops::Shl;
+
 use bitcoin_hashes::{sha256d, Hash};
 use serde::{Deserialize, Serialize};
 
@@ -44,44 +46,106 @@ impl Header {
     // Function to calculate the double SHA-256 hash of a block header
     pub fn calculate_hash(&self) -> [u8; 32] {
         let serialized = self.serialize_block_header();
-        *sha256d::Hash::hash(&serialized).as_byte_array()
+        sha256d::Hash::hash(&serialized).to_byte_array()
     }
-
-    /// Convert compact bits format to the target 256-bit value.
-    pub fn target_from_bits(&self) -> [u8; 32] {
+    fn target(&self) -> U256 {
         let bits = self.bits;
-        let exponent = bits >> 24; // First byte (exponent)
-        let mantissa = bits & 0x00ffffff; // Last 3 bytes (mantissa)
+        // This is a floating-point "compact" encoding originally used by
+        // OpenSSL, which satoshi put into consensus code, so we're stuck
+        // with it. The exponent needs to have 3 subtracted from it, hence
+        // this goofy decoding code. 3 is due to 3 bytes in the mantissa.
+        let (mant, expt) = {
+            let unshifted_expt = bits >> 24;
+            if unshifted_expt <= 3 {
+                ((bits & 0xFFFFFF) >> (8 * (3 - unshifted_expt as usize)), 0)
+            } else {
+                (bits & 0xFFFFFF, 8 * ((bits >> 24) - 3))
+            }
+        };
 
-        // The target is calculated as: mantissa * 2^(8 * (exponent - 3))
-        let mut target = [0u8; 32];
-
-        if exponent <= 3 {
-            // If the exponent is less than or equal to 3, the mantissa is shifted to the right.
-            target[0..(exponent as usize)].copy_from_slice(&mantissa.to_be_bytes()[1..]);
+        // The mantissa is signed but may not be negative.
+        if mant > 0x7F_FFFF {
+            U256::ZERO
         } else {
-            // Shift mantissa left by (exponent - 3) bytes.
-            let shift = (exponent - 3) as usize;
-            target[shift..shift + 3].copy_from_slice(&mantissa.to_be_bytes()[1..]);
+            U256::from(mant) << expt
         }
-
-        target
     }
 
     /// Validate the proof of work by checking if the block hash is less than or equal to the target.
-    pub fn validate_target(&self, required_target: [u8; 32]) -> bool {
+    pub fn validate_target(&self) -> bool {
         let block_hash = self.calculate_hash();
-        let target = self.target_from_bits();
-        println!("required_target: {:x?}", required_target);
-        println!("Target:          {:x?}", target);
-        println!("Block hash:      {:x?}", block_hash);
-        if target != required_target {
-            return false;
-        }
+        let target = self.target();
+        // println!("required_target: {:x?}", required_target);
+        // println!("Target:          {:x?}", target);
+        // println!("Block hash:      {:x?}", block_hash);
 
+        // if target != required_target {
+        //     return false;
+        // }
+        //
+        let hash = U256::from_le_bytes(block_hash);
         // Compare the block hash with the target using lexicographical comparison
-        block_hash <= target
+        hash <= target
     }
+}
+
+/// Big-endian 256 bit integer type.
+// (high, low): u.0 contains the high bits, u.1 contains the low bits.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct U256(u128, u128);
+
+impl U256 {
+    const ZERO: U256 = U256(0, 0);
+
+    /// Creates a `U256` from a little-endian array of `u8`s.
+    fn from_le_bytes(a: [u8; 32]) -> U256 {
+        let (high, low) = split_in_half(a);
+        let little = u128::from_le_bytes(high);
+        let big = u128::from_le_bytes(low);
+        U256(big, little)
+    }
+
+    fn wrapping_shl(self, rhs: u32) -> Self {
+        let shift = rhs & 0x000000ff;
+
+        let mut ret = U256::ZERO;
+        let word_shift = shift >= 128;
+        let bit_shift = shift % 128;
+
+        if word_shift {
+            ret.0 = self.1 << bit_shift
+        } else {
+            ret.0 = self.0 << bit_shift;
+            if bit_shift > 0 {
+                ret.0 += self.1.wrapping_shr(128 - bit_shift);
+            }
+            ret.1 = self.1 << bit_shift;
+        }
+        ret
+    }
+}
+
+impl Shl<u32> for U256 {
+    type Output = Self;
+    fn shl(self, shift: u32) -> U256 {
+        self.wrapping_shl(shift)
+    }
+}
+
+impl<T: Into<u128>> From<T> for U256 {
+    fn from(x: T) -> Self {
+        U256(0, x.into())
+    }
+}
+/// Splits a 32 byte array into two 16 byte arrays.
+fn split_in_half(a: [u8; 32]) -> ([u8; 16], [u8; 16]) {
+    let mut high = [0_u8; 16];
+    let mut low = [0_u8; 16];
+
+    high.copy_from_slice(&a[..16]);
+    low.copy_from_slice(&a[16..]);
+
+    (high, low)
 }
 
 // Function to serialize a block header to bytes
@@ -104,11 +168,8 @@ mod tests {
     #[test]
     fn test_target() {
         let header = crate::create_genesis_block_header();
-        let mut hash = header.calculate_hash();
-        hash.reverse();
-
         // Validate the block's proof of work
-        assert!(header.validate_target(header.target_from_bits()));
+        assert!(header.validate_target());
     }
 }
 

@@ -19,7 +19,7 @@ fn main() {
     assert_eq!(header.time, 0x495fab29);
     assert!(header.bits >= 0x1d00ffff);
     assert_eq!(header.nonce, 0x7c2bac1d);
-    assert!(header.validate_target(header.target_from_bits()));
+    assert!(header.validate_target());
 
     // write public output to the journal
     env::commit(&header);
