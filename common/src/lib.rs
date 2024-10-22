@@ -29,30 +29,69 @@ pub fn create_genesis_block_header() -> Header {
     }
 }
 
+impl Header {
+    pub fn serialize_block_header(&self) -> Vec<u8> {
+        let mut result = vec![];
+        result.extend_from_slice(&self.version.to_le_bytes());
+        result.extend_from_slice(&self.prev_blockhash);
+        result.extend_from_slice(&self.merkle_root);
+        result.extend_from_slice(&self.time.to_le_bytes());
+        result.extend_from_slice(&self.bits.to_le_bytes());
+        result.extend_from_slice(&self.nonce.to_le_bytes());
+        result
+    }
+
+    // Function to calculate the double SHA-256 hash of a block header
+    pub fn calculate_hash(&self) -> [u8; 32] {
+        let serialized = self.serialize_block_header();
+        *sha256d::Hash::hash(&serialized).as_byte_array()
+    }
+
+    /// Convert compact bits format to the target 256-bit value.
+    pub fn target_from_bits(&self) -> [u8; 32] {
+        let bits = self.bits;
+        let exponent = bits >> 24; // First byte (exponent)
+        let mantissa = bits & 0x00ffffff; // Last 3 bytes (mantissa)
+
+        // The target is calculated as: mantissa * 2^(8 * (exponent - 3))
+        let mut target = [0u8; 32];
+
+        if exponent <= 3 {
+            // If the exponent is less than or equal to 3, the mantissa is shifted to the right.
+            target[0..(exponent as usize)].copy_from_slice(&mantissa.to_be_bytes()[1..]);
+        } else {
+            // Shift mantissa left by (exponent - 3) bytes.
+            let shift = (exponent - 3) as usize;
+            target[shift..shift + 3].copy_from_slice(&mantissa.to_be_bytes()[1..]);
+        }
+
+        target
+    }
+
+    /// Validate the proof of work by checking if the block hash is less than or equal to the target.
+    pub fn validate_target(&self, required_target: [u8; 32]) -> bool {
+        let block_hash = self.calculate_hash();
+        let target = self.target_from_bits();
+        println!("required_target: {:x?}", required_target);
+        println!("Target:          {:x?}", target);
+        println!("Block hash:      {:x?}", block_hash);
+        if target != required_target {
+            return false;
+        }
+
+        // Compare the block hash with the target using lexicographical comparison
+        block_hash <= target
+    }
+}
+
 // Function to serialize a block header to bytes
-pub fn serialize_block_header(header: &Header) -> Vec<u8> {
-    let mut result = vec![];
-    result.extend_from_slice(&header.version.to_le_bytes());
-    result.extend_from_slice(&header.prev_blockhash);
-    result.extend_from_slice(&header.merkle_root);
-    result.extend_from_slice(&header.time.to_le_bytes());
-    result.extend_from_slice(&header.bits.to_le_bytes());
-    result.extend_from_slice(&header.nonce.to_le_bytes());
-    result
-}
-
-// Function to calculate the double SHA-256 hash of a block header
-pub fn calculate_hash(header: &Header) -> [u8; 32] {
-    let serialized = serialize_block_header(header);
-    *sha256d::Hash::hash(&serialized).as_byte_array()
-}
-
 #[cfg(test)]
 mod tests {
+
     #[test]
     fn test_genesis() {
         let header = crate::create_genesis_block_header();
-        let mut hash = super::calculate_hash(&header);
+        let mut hash = header.calculate_hash();
         hash.reverse();
         let expected: [u8; 32] =
             hex::decode("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")
@@ -60,6 +99,16 @@ mod tests {
                 .try_into()
                 .unwrap();
         assert_eq!(hash, expected);
+    }
+
+    #[test]
+    fn test_target() {
+        let header = crate::create_genesis_block_header();
+        let mut hash = header.calculate_hash();
+        hash.reverse();
+
+        // Validate the block's proof of work
+        assert!(header.validate_target(header.target_from_bits()));
     }
 }
 
