@@ -1,4 +1,4 @@
-use common::create_block_1;
+use common::create_genesis_block;
 use common::Block;
 use methods::{VERIFY_ELF, VERIFY_ID};
 use risc0_zkvm::{default_prover, ExecutorEnv};
@@ -9,7 +9,7 @@ fn main() {
         .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
         .init();
 
-    let input: Block = create_block_1();
+    let input: Block = create_genesis_block();
 
     let env = ExecutorEnv::builder()
         .write(&input)

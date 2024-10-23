@@ -16,10 +16,8 @@ pub struct Transaction {
 
 impl Transaction {
     pub fn txid(&self) -> [u8; 32] {
-        let mut serialized = vec![];
-        serialized.extend_from_slice(&self.data);
-        println!("serialized tx: {:x?}", serialized);
-        sha256d::Hash::hash(&serialized).to_byte_array()
+        println!("serialized tx: {:?}", hex::encode(&self.data));
+        sha256d::Hash::hash(&self.data).to_byte_array()
     }
 }
 
@@ -40,6 +38,27 @@ impl Block {
 
     pub fn calculate_block_hash(&self) -> [u8; 32] {
         self.header.calculate_hash()
+    }
+
+    pub fn serialize_block(&self) -> Vec<u8> {
+        let mut result = Vec::new();
+        result.extend_from_slice(&self.header.serialize_block_header());
+        if self.txdata.len() < 252 {
+            result.extend_from_slice(&(self.txdata.len() as u8).to_le_bytes());
+        } else if self.txdata.len() < 65535 {
+            result.extend_from_slice(&0xfdu8.to_le_bytes());
+            result.extend_from_slice(&(self.txdata.len() as u16).to_le_bytes());
+        } else if self.txdata.len() < 4294967295 {
+            result.extend_from_slice(&0xfeu8.to_le_bytes());
+            result.extend_from_slice(&(self.txdata.len() as u32).to_le_bytes());
+        } else {
+            result.extend_from_slice(&0xffu8.to_le_bytes());
+            result.extend_from_slice(&(self.txdata.len() as u64).to_le_bytes());
+        }
+        for tx in &self.txdata {
+            result.extend_from_slice(&tx.data);
+        }
+        result
     }
 }
 
@@ -87,47 +106,9 @@ pub struct Header {
     pub nonce: u32,
 }
 
-pub fn create_genesis_block() -> Block {
-    let header = create_genesis_block_header();
-    let tx = hex::decode("0101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff4d04ffff001d0104455468652054696d65732030332f4a616e2f32303039204368616e63656c6c6f72206f6e206272696e6b206f66207365636f6e64206261696c6f757420666f722062616e6b73ffffffff0100f2052a01000000434104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac00000000").unwrap();
-    let txdata = vec![Transaction { data: tx }];
-    Block { header, txdata }
-}
-
-pub fn create_block_1() -> Block {
-    let header = Header {
-        version: 0x01,
-        prev_blockhash: from_hex!(
-            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-        ),
-        merkle_root: from_hex!("0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"),
-        time: 0x495fab29,
-        bits: 0x1d00ffff,
-        nonce: 0x7c2bac1d,
-    };
-    let data = from_hex!("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000");
-    let txdata = vec![Transaction { data }];
-
-    Block { header, txdata }
-}
-
-/// Create the genesis block header for the Bitcoin blockchain.
-pub fn create_genesis_block_header() -> Header {
-    let merkle_root = from_hex!("3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a");
-
-    Header {
-        version: 0x01,
-        prev_blockhash: [0u8; 32],
-        merkle_root,
-        time: 0x495fab29,
-        bits: 0x1d00ffff,
-        nonce: 0x7c2bac1d,
-    }
-}
-
 impl Header {
     fn serialize_block_header(&self) -> Vec<u8> {
-        let mut result = vec![];
+        let mut result = Vec::with_capacity(80);
         result.extend_from_slice(&self.version.to_le_bytes());
         result.extend_from_slice(&self.prev_blockhash);
         result.extend_from_slice(&self.merkle_root);
@@ -140,6 +121,7 @@ impl Header {
     /// calculate the double SHA-256 hash of a block header
     pub fn calculate_hash(&self) -> [u8; 32] {
         let serialized = self.serialize_block_header();
+        println!("serialized header: {:?}", hex::encode(&serialized));
         sha256d::Hash::hash(&serialized).to_byte_array()
     }
 
@@ -245,12 +227,64 @@ fn split_in_half(a: [u8; 32]) -> ([u8; 16], [u8; 16]) {
     (high, low)
 }
 
+pub fn create_genesis_block() -> Block {
+    let header = create_genesis_block_header();
+    let tx = hex::decode("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff4d04ffff001d0104455468652054696d65732030332f4a616e2f32303039204368616e63656c6c6f72206f6e206272696e6b206f66207365636f6e64206261696c6f757420666f722062616e6b73ffffffff0100f2052a01000000434104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac00000000").unwrap();
+    let txdata = vec![Transaction { data: tx }];
+    Block { header, txdata }
+}
+
+/// Create the genesis block header for the Bitcoin blockchain.
+pub fn create_genesis_block_header() -> Header {
+    let merkle_root = from_hex!("3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a");
+
+    Header {
+        version: 0x01,
+        prev_blockhash: [0u8; 32],
+        merkle_root,
+        time: 0x495fab29,
+        bits: 0x1d00ffff,
+        nonce: 0x7c2bac1d,
+    }
+}
+
+pub fn create_block_1() -> Block {
+    let header = Header {
+        version: 0x01,
+        prev_blockhash: from_hex!(
+            "6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000"
+        ),
+        merkle_root: from_hex!("982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e"),
+        time: 0x495fab29,
+        bits: 0x1d00ffff,
+        nonce: 0x9962e301,
+    };
+    let data = from_hex!("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000");
+    let txdata = vec![Transaction { data }];
+
+    Block { header, txdata }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{calculate_merkle_root, Block, Header, Transaction};
+    use crate::calculate_merkle_root;
+
+    #[test]
+    fn test_genesis_block() {
+        let new_block = crate::create_genesis_block();
+        let serialized = new_block.serialize_block();
+        let expected: Vec<u8> = from_hex!("0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a29ab5f49ffff001d1dac2b7c0101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff4d04ffff001d0104455468652054696d65732030332f4a616e2f32303039204368616e63656c6c6f72206f6e206272696e6b206f66207365636f6e64206261696c6f757420666f722062616e6b73ffffffff0100f2052a01000000434104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac00000000");
+        assert_eq!(serialized, expected);
+    }
 
     #[test]
     fn test_merkle_root() {
+        // genesis block
+        let genesis = crate::create_genesis_block();
+        let merkle_root = genesis.calculate_merkle_root();
+        let expected: [u8; 32] =
+            from_hex!("3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a");
+        assert_eq!(expected, merkle_root);
         // block 1
         let hashes: Vec<[u8; 32]> = vec![from_hex!(
             "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"
@@ -263,6 +297,14 @@ mod tests {
 
     #[test]
     fn test_txid() {
+        // genesis block
+        let genesis = crate::create_genesis_block();
+        let mut txid = genesis.txdata[0].txid();
+        txid.reverse();
+        let expected: [u8; 32] =
+            from_hex!("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
+        assert_eq!(txid, expected);
+        // block 1
         let block = crate::create_block_1();
         let mut txid = block.txdata[0].txid();
         txid.reverse();
@@ -271,20 +313,28 @@ mod tests {
             from_hex!("0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098");
 
         assert_eq!(expected, txid);
-        let mut merkle_root = block.calculate_merkle_root();
+        let merkle_root = block.calculate_merkle_root();
         let expected_merkle_root = block.header.merkle_root;
-        merkle_root.reverse();
         assert_eq!(merkle_root, expected_merkle_root);
     }
 
     #[test]
-    fn test_genesis() {
+    fn test_block_hash() {
         let header = crate::create_genesis_block_header();
         let mut hash = header.calculate_hash();
         hash.reverse();
         let expected: [u8; 32] =
             from_hex!("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
         assert_eq!(hash, expected);
+        // block 1
+        // let block1 = crate::create_block_1();
+        // let header = block1.header;
+        // let mut hash = header.calculate_hash();
+        // hash.reverse();
+        // println!("block1 hash: {:?}", hex::encode(hash));
+        // let expected: [u8; 32] =
+        //     from_hex!("00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048");
+        // assert_eq!(hash, expected);
     }
 
     #[test]
