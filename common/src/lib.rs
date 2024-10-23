@@ -3,7 +3,81 @@ use std::ops::Shl;
 use bitcoin_hashes::{sha256d, Hash};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+macro_rules! from_hex {
+    ($s:literal) => {
+        hex::decode($s).unwrap().try_into().unwrap()
+    };
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
+pub struct Transaction {
+    data: Vec<u8>,
+}
+
+impl Transaction {
+    pub fn txid(&self) -> [u8; 32] {
+        let mut serialized = vec![];
+        serialized.extend_from_slice(&self.data);
+        println!("serialized tx: {:x?}", serialized);
+        sha256d::Hash::hash(&serialized).to_byte_array()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
+pub struct Block {
+    /// The block header
+    pub header: Header,
+    /// List of transactions contained in the block
+    pub txdata: Vec<Transaction>,
+}
+
+impl Block {
+    /// Calculate the merkle root of the block
+    pub fn calculate_merkle_root(&self) -> [u8; 32] {
+        let hashes: Vec<[u8; 32]> = self.txdata.iter().map(|tx| tx.txid()).collect();
+        calculate_merkle_root(hashes)
+    }
+
+    pub fn calculate_block_hash(&self) -> [u8; 32] {
+        self.header.calculate_hash()
+    }
+}
+
+/// Calculate the Merkle root from a list of transaction hashes.
+fn calculate_merkle_root(mut hashes: Vec<[u8; 32]>) -> [u8; 32] {
+    // Return the only hash if we have a single transaction (special case)
+    if hashes.len() == 1 {
+        return hashes[0];
+    }
+
+    // Keep hashing pairs of hashes until we reach a single hash (the root)
+    while hashes.len() > 1 {
+        let mut new_level = Vec::new();
+
+        for i in (0..hashes.len()).step_by(2) {
+            if i + 1 < hashes.len() {
+                // Hash the pair of hashes
+                let mut combined = Vec::new();
+                combined.extend_from_slice(&hashes[i]);
+                combined.extend_from_slice(&hashes[i + 1]);
+                new_level.push(sha256d::Hash::hash(&combined).to_byte_array());
+            } else {
+                // If we have an odd number of hashes, duplicate the last one
+                let mut combined = Vec::new();
+                combined.extend_from_slice(&hashes[i]);
+                combined.extend_from_slice(&hashes[i]);
+                new_level.push(sha256d::Hash::hash(&combined).to_byte_array());
+            }
+        }
+
+        hashes = new_level;
+    }
+
+    // The last remaining hash is the Merkle root
+    hashes[0]
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Header {
     pub version: i32,
     pub prev_blockhash: [u8; 32],
@@ -13,13 +87,33 @@ pub struct Header {
     pub nonce: u32,
 }
 
-// Example of how to create a sample block header
+pub fn create_genesis_block() -> Block {
+    let header = create_genesis_block_header();
+    let tx = hex::decode("0101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff4d04ffff001d0104455468652054696d65732030332f4a616e2f32303039204368616e63656c6c6f72206f6e206272696e6b206f66207365636f6e64206261696c6f757420666f722062616e6b73ffffffff0100f2052a01000000434104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac00000000").unwrap();
+    let txdata = vec![Transaction { data: tx }];
+    Block { header, txdata }
+}
+
+pub fn create_block_1() -> Block {
+    let header = Header {
+        version: 0x01,
+        prev_blockhash: from_hex!(
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+        ),
+        merkle_root: from_hex!("0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"),
+        time: 0x495fab29,
+        bits: 0x1d00ffff,
+        nonce: 0x7c2bac1d,
+    };
+    let data = from_hex!("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000");
+    let txdata = vec![Transaction { data }];
+
+    Block { header, txdata }
+}
+
+/// Create the genesis block header for the Bitcoin blockchain.
 pub fn create_genesis_block_header() -> Header {
-    let merkle_root =
-        hex::decode("3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a")
-            .unwrap()
-            .try_into()
-            .unwrap();
+    let merkle_root = from_hex!("3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a");
 
     Header {
         version: 0x01,
@@ -32,7 +126,7 @@ pub fn create_genesis_block_header() -> Header {
 }
 
 impl Header {
-    pub fn serialize_block_header(&self) -> Vec<u8> {
+    fn serialize_block_header(&self) -> Vec<u8> {
         let mut result = vec![];
         result.extend_from_slice(&self.version.to_le_bytes());
         result.extend_from_slice(&self.prev_blockhash);
@@ -43,11 +137,13 @@ impl Header {
         result
     }
 
-    // Function to calculate the double SHA-256 hash of a block header
+    /// calculate the double SHA-256 hash of a block header
     pub fn calculate_hash(&self) -> [u8; 32] {
         let serialized = self.serialize_block_header();
         sha256d::Hash::hash(&serialized).to_byte_array()
     }
+
+    /// Extract the target from the bits field of the block header
     fn target(&self) -> U256 {
         let bits = self.bits;
         // This is a floating-point "compact" encoding originally used by
@@ -137,6 +233,7 @@ impl<T: Into<u128>> From<T> for U256 {
         U256(0, x.into())
     }
 }
+
 /// Splits a 32 byte array into two 16 byte arrays.
 fn split_in_half(a: [u8; 32]) -> ([u8; 16], [u8; 16]) {
     let mut high = [0_u8; 16];
@@ -148,9 +245,37 @@ fn split_in_half(a: [u8; 32]) -> ([u8; 16], [u8; 16]) {
     (high, low)
 }
 
-// Function to serialize a block header to bytes
 #[cfg(test)]
 mod tests {
+    use crate::{calculate_merkle_root, Block, Header, Transaction};
+
+    #[test]
+    fn test_merkle_root() {
+        // block 1
+        let hashes: Vec<[u8; 32]> = vec![from_hex!(
+            "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"
+        )];
+        let merkle_root = calculate_merkle_root(hashes);
+        let expected: [u8; 32] =
+            from_hex!("0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098");
+        assert_eq!(expected, merkle_root);
+    }
+
+    #[test]
+    fn test_txid() {
+        let block = crate::create_block_1();
+        let mut txid = block.txdata[0].txid();
+        txid.reverse();
+        println!("tx id :{:x?}", txid);
+        let expected: [u8; 32] =
+            from_hex!("0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098");
+
+        assert_eq!(expected, txid);
+        let mut merkle_root = block.calculate_merkle_root();
+        let expected_merkle_root = block.header.merkle_root;
+        merkle_root.reverse();
+        assert_eq!(merkle_root, expected_merkle_root);
+    }
 
     #[test]
     fn test_genesis() {
@@ -158,55 +283,13 @@ mod tests {
         let mut hash = header.calculate_hash();
         hash.reverse();
         let expected: [u8; 32] =
-            hex::decode("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")
-                .unwrap()
-                .try_into()
-                .unwrap();
+            from_hex!("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
         assert_eq!(hash, expected);
     }
 
     #[test]
     fn test_target() {
         let header = crate::create_genesis_block_header();
-        // Validate the block's proof of work
         assert!(header.validate_target());
     }
 }
-
-// #[derive(Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
-// pub struct Transaction {
-//     /// The protocol version, is currently expected to be 1 or 2 (BIP 68).
-//     pub version: i32,
-//     /// Block height or timestamp. Transaction cannot be included in a block until this height/time.
-//     ///
-//     /// ### Relevant BIPs
-//     ///
-//     /// * [BIP-65 OP_CHECKLOCKTIMEVERIFY](https://github.com/bitcoin/bips/blob/master/bip-0065.mediawiki)
-//     /// * [BIP-113 Median time-past as endpoint for lock-time calculations](https://github.com/bitcoin/bips/blob/master/bip-0113.mediawiki)
-//     pub lock_time: LockTime,
-//     /// List of transaction inputs.
-//     pub input: Vec<TxIn>,
-//     /// List of transaction outputs.
-//     pub output: Vec<TxOut>,
-// }
-//
-// #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-// pub struct Time(u32);
-//
-// #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-// pub struct Height(u32);
-//
-// #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
-// pub enum LockTime {
-//     Blocks(Height),
-//     Seconds(Time),
-// }
-//
-// #[derive(Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
-// pub struct Block {
-//     /// The block header
-//     pub header: Header,
-//     /// List of transactions contained in the block
-//     pub txdata: Vec<Transaction>,
-// }
-//

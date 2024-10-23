@@ -1,5 +1,5 @@
-use common::create_genesis_block_header;
-use common::Header;
+use common::create_block_1;
+use common::Block;
 use methods::{VERIFY_ELF, VERIFY_ID};
 use risc0_zkvm::{default_prover, ExecutorEnv};
 
@@ -9,7 +9,7 @@ fn main() {
         .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
         .init();
 
-    let input: Header = create_genesis_block_header();
+    let input: Block = create_block_1();
 
     let env = ExecutorEnv::builder()
         .write(&input)
@@ -23,7 +23,7 @@ fn main() {
     // Produce a receipt by proving the specified ELF binary.
     let receipt = prover.prove(env, VERIFY_ELF).unwrap().receipt;
 
-    let _output: Header = receipt.journal.decode().unwrap();
+    let _output: Block = receipt.journal.decode().unwrap();
 
     // The receipt was verified at the end of proving, but the below code is an
     // example of how someone else could verify this receipt.
