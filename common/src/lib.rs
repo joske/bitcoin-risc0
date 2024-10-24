@@ -270,7 +270,7 @@ mod tests {
     use crate::calculate_merkle_root;
 
     #[test]
-    fn test_genesis_block() {
+    fn genesis_block() {
         let new_block = crate::create_genesis_block();
         let serialized = new_block.serialize_block();
         let expected: Vec<u8> = from_hex!("0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a29ab5f49ffff001d1dac2b7c0101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff4d04ffff001d0104455468652054696d65732030332f4a616e2f32303039204368616e63656c6c6f72206f6e206272696e6b206f66207365636f6e64206261696c6f757420666f722062616e6b73ffffffff0100f2052a01000000434104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac00000000");
@@ -278,14 +278,16 @@ mod tests {
     }
 
     #[test]
-    fn test_merkle_root() {
-        // genesis block
+    fn merkle_root_genesis() {
         let genesis = crate::create_genesis_block();
         let merkle_root = genesis.calculate_merkle_root();
         let expected: [u8; 32] =
             from_hex!("3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a");
         assert_eq!(expected, merkle_root);
-        // block 1
+    }
+
+    #[test]
+    fn merkle_root_block1() {
         let hashes: Vec<[u8; 32]> = vec![from_hex!(
             "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"
         )];
@@ -296,15 +298,17 @@ mod tests {
     }
 
     #[test]
-    fn test_txid() {
-        // genesis block
+    fn txid_genesis() {
         let genesis = crate::create_genesis_block();
         let mut txid = genesis.txdata[0].txid();
         txid.reverse();
         let expected: [u8; 32] =
             from_hex!("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b");
         assert_eq!(txid, expected);
-        // block 1
+    }
+
+    #[test]
+    fn txid_block1() {
         let block = crate::create_block_1();
         let mut txid = block.txdata[0].txid();
         txid.reverse();
@@ -319,26 +323,29 @@ mod tests {
     }
 
     #[test]
-    fn test_block_hash() {
+    fn block_hash_genesis() {
         let header = crate::create_genesis_block_header();
         let mut hash = header.calculate_hash();
         hash.reverse();
         let expected: [u8; 32] =
             from_hex!("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
         assert_eq!(hash, expected);
-        // block 1
-        // let block1 = crate::create_block_1();
-        // let header = block1.header;
-        // let mut hash = header.calculate_hash();
-        // hash.reverse();
-        // println!("block1 hash: {:?}", hex::encode(hash));
-        // let expected: [u8; 32] =
-        //     from_hex!("00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048");
-        // assert_eq!(hash, expected);
     }
 
     #[test]
-    fn test_target() {
+    fn block_hash_block1() {
+        let block1 = crate::create_block_1();
+        let header = block1.header;
+        let mut hash = header.calculate_hash();
+        hash.reverse();
+        println!("block1 hash: {:?}", hex::encode(hash));
+        let expected: [u8; 32] =
+            from_hex!("00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048");
+        assert_eq!(hash, expected);
+    }
+
+    #[test]
+    fn target() {
         let header = crate::create_genesis_block_header();
         assert!(header.validate_target());
     }
