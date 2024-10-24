@@ -255,7 +255,7 @@ pub fn create_block_1() -> Block {
             "6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000"
         ),
         merkle_root: from_hex!("982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e"),
-        time: 0x495fab29,
+        time: 0x4966bc61,
         bits: 0x1d00ffff,
         nonce: 0x9962e301,
     };
